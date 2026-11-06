@@ -1,0 +1,650 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Jarvis</title>
+<style>
+  :root {
+    --bg: #000;
+    --ink: #e9ecf2;
+    --dim: #8a93a6;
+    --line: rgba(255,255,255,.10);
+    --glass: rgba(10,12,18,.72);
+    --accent: #7fd1b9;
+    --warn: #f2b66d;
+    --bad: #f07b7b;
+    --font: ui-sans-serif, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink);
+               font: 14px/1.45 var(--font); overflow: hidden; }
+  #stars, #graph { position: fixed; inset: 0; }
+  #stars { z-index: 0; }
+  #graph { z-index: 1; }
+  button { font: inherit; color: inherit; cursor: pointer; }
+
+  /* top-left: identity, status, badge */
+  #hud { position: fixed; top: 16px; left: 16px; z-index: 5; max-width: min(520px, calc(100vw - 32px));
+         pointer-events: none; }
+  #hud h1 { font: 500 22px/1 var(--serif); letter-spacing: .02em; margin: 0 0 6px; }
+  #hud h1 small { font: 12px var(--mono); color: var(--dim); letter-spacing: .06em; margin-left: 8px; }
+  #status { font: 12px/1.4 var(--mono); color: var(--dim); letter-spacing: .04em; }
+  #status b { color: var(--ink); font-weight: 600; text-transform: uppercase; }
+  #status.listening b { color: var(--accent); }
+  #status.thinking b { color: var(--warn); }
+  #status.speaking b { color: #9db7ff; }
+  #badge { margin-top: 6px; font: 11px var(--mono); letter-spacing: .08em; color: var(--ink);
+           background: var(--glass); border: 1px solid var(--line); border-radius: 6px;
+           display: inline-block; padding: 4px 8px; opacity: 0; transform: translateY(-4px);
+           transition: opacity .35s, transform .35s; }
+  #badge.show { opacity: 1; transform: none; }
+  #notice { margin-top: 6px; font-size: 12px; color: var(--warn); display: none; }
+  #muted { display: none; margin-left: 8px; color: var(--warn); }
+
+  /* answer card */
+  #answer { position: fixed; left: 50%; bottom: 92px; transform: translateX(-50%); z-index: 5;
+            width: min(720px, calc(100vw - 32px)); background: var(--glass); backdrop-filter: blur(10px);
+            border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; display: none; }
+  #answer p { margin: 0; font: 17px/1.45 var(--serif); }
+  #answer .meta { margin-top: 8px; font: 11px var(--mono); color: var(--dim); display: flex;
+                  flex-wrap: wrap; gap: 6px; align-items: center; }
+  .chip { border: 1px solid var(--line); border-radius: 999px; padding: 2px 8px; background: none;
+          font: 11px var(--mono); color: var(--ink); }
+  .chip:hover { border-color: var(--accent); }
+
+  /* input bar */
+  #bar { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); z-index: 6;
+         width: min(720px, calc(100vw - 32px)); display: flex; gap: 8px; }
+  #q { flex: 1; min-width: 0; background: var(--glass); backdrop-filter: blur(10px); color: var(--ink);
+       border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; font: 15px var(--font); outline: none; }
+  #q:focus { border-color: rgba(127,209,185,.6); }
+  .tool { background: var(--glass); border: 1px solid var(--line); border-radius: 10px; padding: 0 14px;
+          font: 12px var(--mono); letter-spacing: .04em; white-space: nowrap; }
+  .tool.on { border-color: var(--accent); color: var(--accent); }
+  .tool.rec { border-color: var(--bad); color: var(--bad); }
+
+  /* side panel */
+  #panel { position: fixed; top: 0; right: 0; bottom: 0; z-index: 7; width: min(400px, 100vw);
+           background: var(--glass); backdrop-filter: blur(14px); border-left: 1px solid var(--line);
+           transform: translateX(100%); transition: transform .35s ease; padding: 22px 22px 120px;
+           overflow-y: auto; }
+  #panel.open { transform: none; }
+  #panel h2 { font: 500 22px/1.2 var(--serif); margin: 6px 0 10px; }
+  #panel .group { font: 11px var(--mono); letter-spacing: .1em; text-transform: uppercase; }
+  #panel .excerpt { white-space: pre-wrap; color: #cfd5e1; font-size: 14px; }
+  #panel .path { font: 11px var(--mono); color: var(--dim); margin-top: 14px; }
+  #panel .nbrs { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+  #close { position: absolute; top: 14px; right: 14px; background: none; border: 0; color: var(--dim);
+           font-size: 20px; }
+  #count { font: 12px var(--mono); color: var(--dim); }
+
+  @media (min-width: 1000px) {
+    body.panel-open #answer, body.panel-open #bar { left: calc((100vw - 400px) / 2); width: min(720px, calc(100vw - 432px)); }
+  }
+  @media (max-width: 600px) {
+    #hud h1 { font-size: 18px; }
+    #answer { bottom: 140px; }
+    #bar { flex-wrap: wrap; }
+    #q { flex-basis: 100%; }
+    .tool { flex: 1; padding: 10px; }
+  }
+</style>
+</head>
+<body>
+<canvas id="stars"></canvas>
+<div id="graph"></div>
+
+<div id="hud">
+  <h1>Jarvis <small id="count"></small><small id="muted">MUTED TAB</small></h1>
+  <div id="status"><b>idle</b></div>
+  <div id="badge"></div>
+  <div id="notice"></div>
+</div>
+
+<div id="answer"><p id="answer-text"></p><div class="meta" id="answer-meta"></div></div>
+
+<div id="bar">
+  <input id="q" autocomplete="off" placeholder="Ask about your notes, or say &ldquo;remember that&hellip;&rdquo;">
+  <button class="tool" id="ptt" title="Push to talk: click to start, click again to send">TALK</button>
+  <button class="tool" id="wake" title="Hands-free: say &ldquo;Jarvis&rdquo; to wake him">HANDS-FREE</button>
+</div>
+
+<aside id="panel">
+  <button id="close" aria-label="Close">&times;</button>
+  <div class="group" id="p-group"></div>
+  <h2 id="p-title"></h2>
+  <div class="excerpt" id="p-excerpt"></div>
+  <div class="path" id="p-path"></div>
+  <div class="nbrs" id="p-nbrs"></div>
+</aside>
+
+<script src="vendor/3d-force-graph.min.js"></script>
+<script src="graph-data.js"></script>
+<script>
+"use strict";
+// =============================== tuning ======================================
+const SILENCE_MS = 700;          // quiet this long ends an utterance (how you pause)
+const FINISH_MS = 900;           // wait this long for more speech before dispatching (how you think)
+const MIN_UTTERANCE_MS = 300;    // anything shorter is a cough, not a command
+const THRESHOLD = 0.018;         // RMS loudness that starts an utterance
+const SPEAKING_THRESHOLD = 0.07; // raised while Jarvis talks so his own voice does not trigger it
+const CHUNK_CHARS = 170;         // sentence-packed chunks for the voice
+const MUTED = new URLSearchParams(location.search).get("mute") === "1";
+
+const GROUP_COLORS = { operations: "#7fd1b9", people: "#f2b66d", suppliers: "#9db7ff",
+  finance: "#f07b7b", marketing: "#d39bff", customers: "#6ee0ff", menu: "#ffd36e",
+  captures: "#ffffff", notes: "#c9d1e0" };
+const PALETTE = ["#7fd1b9", "#f2b66d", "#9db7ff", "#f07b7b", "#d39bff", "#6ee0ff", "#ffd36e"];
+const colorOf = g => GROUP_COLORS[g] || PALETTE[[...g].reduce((a, c) => a + c.charCodeAt(0), 0) % PALETTE.length];
+
+const $ = id => document.getElementById(id);
+const JARVIS = window.JARVIS = { metrics: { speeches: [], playRefusals: 0, playsStarted: 0 }, turn: 0 };
+
+// =============================== status + badge ==============================
+function setStatus(state, detail) {
+  const s = $("status");
+  s.className = state;
+  s.innerHTML = "<b>" + state + "</b>" + (detail ? " &nbsp;" + escapeHtml(detail) : "");
+}
+function escapeHtml(t) { return String(t).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+
+let badgeState = null, badgeTimer = null;
+const voiceState = { mode: "local", profile: "Jarvis" };
+function updateBadge(brain) {
+  if (brain) JARVIS.brain = brain;
+  const b = JARVIS.brain;
+  if (!b) return;
+  const text = `BRAIN ${b.local ? "local" : "cloud"} ${b.model}  ·  VOICE ${voiceState.mode} ${voiceState.mode === "local" ? voiceState.profile : "speech"}`;
+  if (badgeState === null) { badgeState = text; $("badge").textContent = text; return; }  // hidden by default
+  if (text === badgeState) return;                  // the same voice on every reply never re-triggers it
+  badgeState = text;
+  $("badge").textContent = text;
+  $("badge").classList.add("show");
+  clearTimeout(badgeTimer);
+  badgeTimer = setTimeout(() => $("badge").classList.remove("show"), 5000);
+}
+function notice(text) { const n = $("notice"); n.textContent = text; n.style.display = text ? "block" : "none"; }
+
+// =============================== the galaxy ==================================
+const nodes = GRAPH.nodes, links = GRAPH.links;
+const adj = new Map(nodes.map(n => [n.id, new Set()]));
+links.forEach(l => { adj.get(l.source).add(l.target); adj.get(l.target).add(l.source); });
+let highlight = new Set();
+let lastInteraction = 0, flying = false;
+
+const Graph = ForceGraph3D({ controlType: "orbit" })($("graph"))
+  .backgroundColor("rgba(0,0,0,0)")
+  .showNavInfo(false)
+  .graphData({ nodes, links })
+  .nodeLabel(n => `<div style="font:12px ${getComputedStyle(document.body).fontFamily};padding:4px 8px;background:rgba(0,0,0,.7);border-radius:6px">${escapeHtml(n.label)}</div>`)
+  .nodeVal(n => 1.5 + (adj.get(n.id)?.size || 0) * 0.35)
+  .nodeRelSize(3.2)
+  .nodeResolution(16)
+  .nodeOpacity(0.95)
+  .nodeColor(n => highlight.size && !highlight.has(n.id) ? "rgba(90,100,120,0.55)" : colorOf(n.group))
+  .linkColor(l => highlight.size && highlight.has(idOf(l.source)) && highlight.has(idOf(l.target)) ? "rgba(255,255,255,0.75)" : "rgba(160,180,220,0.16)")
+  .linkWidth(l => highlight.size && highlight.has(idOf(l.source)) && highlight.has(idOf(l.target)) ? 0.8 : 0)
+  .linkOpacity(0.5)
+  .linkVisibility(l => !l.layout)
+  .d3VelocityDecay(0.3)
+  .onNodeClick(n => { focusNode(n, true); })
+  .onBackgroundClick(() => { clearHighlight(); closePanel(); });
+Graph.d3Force("charge").strength(-90);
+const idOf = x => (typeof x === "object" ? x.id : x);
+function refreshColors() { Graph.nodeColor(Graph.nodeColor()).linkColor(Graph.linkColor()).linkWidth(Graph.linkWidth()); }
+
+["pointerdown", "wheel", "touchstart"].forEach(ev =>
+  $("graph").addEventListener(ev, () => { lastInteraction = performance.now(); }, { passive: true }));
+
+// glow halos: built from the graph's own three.js classes, so no second copy of three is loaded
+let Halo = null;
+function attachHalos() {
+  for (const n of Graph.graphData().nodes) {
+    const obj = n.__threeObj;
+    if (!obj || obj.__halo || !obj.geometry) continue;
+    if (!Halo) Halo = { Mesh: obj.constructor, Sphere: obj.geometry.constructor, Mat: obj.material.constructor };
+    const r = (obj.geometry.parameters && obj.geometry.parameters.radius) || 4;
+    const mat = new Halo.Mat({ transparent: true, opacity: 0.12, depthWrite: false });
+    mat.blending = 2;                       // THREE.AdditiveBlending
+    const halo = new Halo.Mesh(new Halo.Sphere(r * 1.8, 16, 12), mat);
+    obj.add(halo);
+    obj.__halo = halo;
+  }
+  for (const n of Graph.graphData().nodes) {
+    const h = n.__threeObj && n.__threeObj.__halo;
+    if (!h) continue;
+    const c = highlight.size && !highlight.has(n.id) ? "#222630" : colorOf(n.group);
+    h.material.color.set(c);
+    if (h.material.emissive) h.material.emissive.set(c);
+    let s = 1;
+    if (n.__pulseUntil && performance.now() < n.__pulseUntil) {
+      const p = 1 - (n.__pulseUntil - performance.now()) / 2400;
+      s = 1 + 1.6 * Math.sin(p * Math.PI * 3) * (1 - p);
+      h.material.opacity = 0.12 + 0.5 * (1 - p);
+    } else h.material.opacity = highlight.has(n.id) ? 0.24 : 0.12;
+    h.scale.set(s, s, s);
+  }
+}
+
+// cinematic idle rotation
+let angle = 0;
+function idle(now) {
+  attachHalos();
+  if (!flying && now - lastInteraction > 8000 && !$("panel").classList.contains("open")) {
+    const c = Graph.cameraPosition();
+    const r = Math.hypot(c.x, c.z) || 400;
+    angle = Math.atan2(c.x, c.z) + 0.0009;
+    Graph.cameraPosition({ x: r * Math.sin(angle), z: r * Math.cos(angle), y: c.y });
+  }
+  requestAnimationFrame(idle);
+}
+requestAnimationFrame(idle);
+
+function flyTo(n, ms = 1600, dist = 150) {
+  flying = true; lastInteraction = performance.now();
+  const len = Math.hypot(n.x, n.y, n.z) || 1, k = 1 + dist / len;
+  Graph.cameraPosition({ x: n.x * k, y: n.y * k, z: n.z * k }, n, ms);
+  setTimeout(() => { flying = false; lastInteraction = performance.now(); }, ms + 50);
+}
+function focusNode(n, open) {
+  highlight = new Set([n.id, ...adj.get(n.id)]);
+  refreshColors();
+  flyTo(n);
+  if (open) openPanel(n);
+}
+function lightCluster(ids) {
+  highlight = new Set(ids);
+  refreshColors();
+  const ns = ids.map(i => nodes[i]);
+  const c = ns.reduce((a, n) => ({ x: a.x + n.x / ns.length, y: a.y + n.y / ns.length, z: a.z + n.z / ns.length }), { x: 0, y: 0, z: 0 });
+  const spread = Math.max(...ns.map(n => Math.hypot(n.x - c.x, n.y - c.y, n.z - c.z)), 30);
+  flyTo(c, 1800, spread * 2.6 + 60);
+}
+function clearHighlight() { highlight = new Set(); refreshColors(); }
+
+function openPanel(n) {
+  $("p-group").textContent = n.group;
+  $("p-group").style.color = colorOf(n.group);
+  $("p-title").textContent = n.label;
+  $("p-excerpt").textContent = n.excerpt;
+  $("p-path").textContent = n.path;
+  const box = $("p-nbrs"); box.innerHTML = "";
+  [...adj.get(n.id)].slice(0, 24).forEach(i => {
+    const b = document.createElement("button");
+    b.className = "chip"; b.textContent = nodes[i].label;
+    b.onclick = () => focusNode(nodes[i], true);
+    box.appendChild(b);
+  });
+  $("panel").classList.add("open");
+  document.body.classList.add("panel-open");
+}
+function closePanel() { $("panel").classList.remove("open"); document.body.classList.remove("panel-open"); }
+$("close").onclick = () => { closePanel(); clearHighlight(); };
+
+// a new note is born: at its most related star, a glow pulse, then the camera flies to it
+function addNote(node, newLinks, relatedIndex) {
+  const relId = relatedIndex ?? (newLinks[0] ? (newLinks[0].source === node.id ? newLinks[0].target : newLinks[0].source) : null);
+  const rel = relId != null ? nodes[relId] : null;
+  const j = () => (Math.random() - 0.5) * 8;
+  if (rel) { node.x = node.fx = rel.x + j(); node.y = node.fy = rel.y + j(); node.z = node.fz = rel.z + j(); }
+  nodes.push(node);
+  adj.set(node.id, new Set());
+  newLinks.forEach(l => { links.push(l); adj.get(l.source).add(l.target); adj.get(l.target).add(l.source); });
+  // no real link yet? an invisible layout-only tether keeps it in its neighbourhood
+  if (!newLinks.length && rel) links.push({ source: node.id, target: rel.id, layout: true });
+  Graph.graphData({ nodes, links });
+  updateCount();
+  node.__pulseUntil = performance.now() + 2400;
+  setTimeout(() => focusNode(node, true), 250);
+  setTimeout(() => { delete node.fx; delete node.fy; delete node.fz; }, 4000);   // pinned while it is born
+}
+function updateCount() { $("count").textContent = nodes.length + " NOTES"; }
+
+// starfield, drifting with the camera for a little parallax
+(function stars() {
+  const cv = $("stars"), ctx = cv.getContext("2d");
+  let W, H, pts = [];
+  function resize() {
+    W = cv.width = innerWidth * devicePixelRatio; H = cv.height = innerHeight * devicePixelRatio;
+    pts = Array.from({ length: Math.round(W * H / 4200) }, () => ({
+      x: Math.random() * W, y: Math.random() * H, r: Math.random() * 1.1 + 0.2,
+      a: Math.random() * 0.7 + 0.15, t: Math.random() * 6.28, d: Math.random() * 0.8 + 0.2 }));
+  }
+  resize(); addEventListener("resize", resize);
+  (function frame(now) {
+    ctx.clearRect(0, 0, W, H);
+    const shift = angle * 120 * devicePixelRatio;
+    for (const p of pts) {
+      const x = ((p.x - shift * p.d) % W + W) % W;
+      ctx.globalAlpha = p.a * (0.75 + 0.25 * Math.sin(now / 900 + p.t));
+      ctx.fillStyle = "#fff";
+      ctx.beginPath(); ctx.arc(x, p.y, p.r * devicePixelRatio, 0, 6.283); ctx.fill();
+    }
+    requestAnimationFrame(frame);
+  })(0);
+})();
+
+// =============================== the voice ===================================
+// split into sentence-packed chunks of about CHUNK_CHARS, never breaking inside a sentence
+function chunks(text) {
+  const sentences = (text.replace(/\s+/g, " ").trim().match(/[^.!?…]+(?:[.!?…]+["')\]]*|$)/g) || []).map(s => s.trim()).filter(Boolean);
+  const out = [];
+  for (const s of sentences) {
+    if (out.length && (out[out.length - 1] + " " + s).length <= CHUNK_CHARS) out[out.length - 1] += " " + s;
+    else out.push(s);
+  }
+  return out;
+}
+
+async function fetchChunk(text) {
+  const item = { text, t0: performance.now(), ready: false };
+  if (voiceState.mode === "browser") { item.kind = "browser"; item.ready = true; return item; }
+  try {
+    const r = await fetch("/tts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text }) });
+    const label = r.headers.get("X-Jarvis-Voice") || "browser";
+    if (!r.ok || label === "browser") throw new Error("voice engine down");
+    item.kind = "wav";
+    item.url = URL.createObjectURL(await r.blob());
+    voiceState.profile = label.split(":")[1] || voiceState.profile;
+  } catch (e) {
+    item.kind = "browser";                       // never fail silently; never crash
+    if (voiceState.mode !== "browser") { voiceState.mode = "browser"; voiceState.fellBack = true; updateBadge(); }
+  }
+  item.ready = true;
+  item.t1 = performance.now();
+  return item;
+}
+
+let currentAudio = null, speechId = 0, speaking = false;
+
+// THE ONE FUNCTION THAT PLAYS AUDIO. The mute check lives here, so nothing can route around it.
+function play(item) {
+  if (MUTED) { JARVIS.metrics.playRefusals++; if (item.url) URL.revokeObjectURL(item.url); return Promise.resolve("muted"); }
+  JARVIS.metrics.playsStarted++;
+  return new Promise(resolve => {
+    if (item.kind === "wav") {
+      const a = currentAudio = new Audio(item.url);
+      const done = () => { URL.revokeObjectURL(item.url); if (currentAudio === a) currentAudio = null; resolve("played"); };
+      a.onended = done; a.onerror = done; a.onpause = () => { if (!a.ended) done(); };
+      a.play().catch(err => { JARVIS.metrics.blocked = String(err); done(); });
+    } else {
+      const u = new SpeechSynthesisUtterance(item.text);
+      const voices = speechSynthesis.getVoices().filter(v => v.localService && /^en/i.test(v.lang));  // local voices only
+      u.voice = voices.find(v => /GB/i.test(v.lang)) || voices[0] || null;
+      if (!u.voice) { resolve("no local browser voice"); return; }
+      u.onend = u.onerror = () => resolve("played");
+      speechSynthesis.speak(u);
+    }
+  });
+}
+
+async function speak(text) {
+  stopSpeaking();                                // a new line always replaces the one playing
+  const id = ++speechId;
+  const parts = chunks(text);
+  if (!parts.length) return;
+  const m = { text, chunks: parts.length, t0: performance.now(), prefetchedInTime: [] };
+  JARVIS.metrics.speeches.push(m);
+  speaking = true; setStatus("speaking");
+  let next = fetchChunk(parts[0]);
+  for (let i = 0; i < parts.length; i++) {
+    const cur = await next;
+    if (id !== speechId) break;
+    if (i === 0) m.firstAudio = +((performance.now() - m.t0) / 1000).toFixed(2);
+    let nextItem = null;
+    if (i + 1 < parts.length) { next = fetchChunk(parts[i + 1]); next.then(it => nextItem = it); }  // fetch while this plays
+    await play(cur);
+    if (id !== speechId) break;
+    if (i + 1 < parts.length) m.prefetchedInTime.push(!!(nextItem && nextItem.ready));
+  }
+  if (id === speechId) { speaking = false; echoHits = 0; setStatus(handsFree ? "listening" : "idle"); }
+  m.done = +((performance.now() - m.t0) / 1000).toFixed(2);
+}
+function stopSpeaking() {
+  speechId++; speaking = false;
+  if (currentAudio) { currentAudio.pause(); currentAudio = null; }
+  try { speechSynthesis.cancel(); } catch (e) {}
+}
+
+// =============================== routes =====================================
+// each is a pattern and a handler, checked BEFORE a sentence goes to the brain
+const TRIGGERS = /^\W*(hey\s+)?(jarvis[\s,.!:]*)?(please\s+)?(remember that|note to self|don'?t let me forget|do not let me forget|log this)\b/i;
+const ROUTES = [
+  { pattern: /\buse (your|the) local voice\b/i, handler: async () => {
+      voiceState.mode = "local"; updateBadge(); return { answer: "My own voice again, sir." }; } },
+  { pattern: /\buse the browser voice\b/i, handler: async () => {
+      voiceState.mode = "browser"; updateBadge(); return { answer: "The browser voice, sir. Do not get attached." }; } },
+  { pattern: /^\W*(stop|wait|quiet|shush)\W*$/i, handler: async () => { stopSpeaking(); return { silent: true }; } },
+  { pattern: TRIGGERS, handler: remember },
+];
+
+async function remember(text) {
+  try {
+    const r = await fetch("/remember", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text }) });
+    const data = await r.json();
+    if (!r.ok) return { answer: data.answer || "I'm afraid that did not save, sir." };   // say so out loud
+    addNote(data.node, data.links, data.related);
+    return { answer: data.answer, nodes: [data.index], noMove: true };
+  } catch (e) {
+    return { answer: "I'm afraid that did not save, sir: the server did not answer." };
+  }
+}
+
+// =============================== a turn =====================================
+let busy = false;
+async function handle(text, source) {
+  text = text.trim();
+  if (!text) return;
+  const turnStart = performance.now();
+  try { JARVIS.turn = (await (await fetch("/drill/reset", { method: "POST" })).json()).turn; } catch (e) {}
+  let out = null;
+  for (const r of ROUTES) if (r.pattern.test(text)) { out = await r.handler(text); break; }
+  if (!out) {
+    busy = true; setStatus("thinking", source === "typed" ? "" : "“" + text + "”");
+    try {
+      const r = await fetch("/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message: text }) });
+      out = await r.json();
+    } catch (e) { out = { answer: "I cannot reach my own server, sir. That is rather embarrassing." }; }
+    busy = false;
+  }
+  if (out.silent) { setStatus(handsFree ? "listening" : "idle"); return; }
+  if (out.brain) updateBadge(out.brain);
+  if (out.voice === "local") { voiceState.mode = "local"; updateBadge(); }
+  showAnswer(out);
+  // make the answer prove itself; small talk never moves the camera
+  if (out.about_notes && out.focus && out.focus.length && !out.noMove) {
+    if (out.focus.length >= 4) lightCluster(out.focus);
+    else focusNode(nodes[out.focus[0]], true);
+  }
+  await speak(out.answer);
+  if (out.followup) {                    // a brain that was still loading: "one moment, sir"
+    setStatus("thinking", "loading the new brain");
+    const r = await fetch(out.followup, { method: "POST" }).then(r => r.json()).catch(() => null);
+    if (r) { if (r.brain) updateBadge(r.brain); showAnswer(r); await speak(r.answer); }
+  }
+  reportResources(turnStart);
+}
+function showAnswer(out) {
+  $("answer").style.display = "block";
+  $("answer-text").textContent = out.answer;
+  const meta = $("answer-meta"); meta.innerHTML = "";
+  if (out.seconds != null) meta.insertAdjacentHTML("beforeend", `<span>${out.seconds}s</span>`);
+  (out.nodes || []).slice(0, 6).forEach(i => {
+    if (!nodes[i]) return;
+    const b = document.createElement("button");
+    b.className = "chip"; b.textContent = nodes[i].label; b.onclick = () => focusNode(nodes[i], true);
+    meta.appendChild(b);
+  });
+}
+// the drill reads this: every resource the browser loaded during the turn
+function reportResources(since) {
+  const entries = performance.getEntriesByType("resource").filter(e => e.startTime >= since - 5)
+    .map(e => ({ url: e.name, type: e.initiatorType }));
+  fetch("/drill/browser", { method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ turn: JARVIS.turn, entries }) }).catch(() => {});
+}
+try { performance.setResourceTimingBufferSize(2000); } catch (e) {}
+
+$("q").addEventListener("keydown", e => {
+  if (e.key === "Enter" && !e.isComposing) { const t = $("q").value; $("q").value = ""; stopSpeaking(); handle(t, "typed"); }
+});
+
+// =============================== the ears ===================================
+// 16 kHz mono 16-bit WAV, encoded here. No browser speech recognition anywhere: it sends audio to a cloud.
+let mic = null, handsFree = false, ptt = false, pttFrames = [];
+let awaitingCommand = false, buffer = "", finishTimer = null, echoHits = 0, pendingHears = 0;
+let hearQueue = Promise.resolve();   // utterances are heard in order, so the second half of a sentence waits for the first
+
+async function startMic() {
+  if (mic) return mic;
+  const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 } });
+  const ctx = new (window.AudioContext || window.webkitAudioContext)();
+  const src = ctx.createMediaStreamSource(stream);
+  const proc = ctx.createScriptProcessor(2048, 1, 1);
+  src.connect(proc); proc.connect(ctx.destination);
+  const settings = stream.getAudioTracks()[0].getSettings ? stream.getAudioTracks()[0].getSettings() : {};
+  if (settings.echoCancellation === false) notice("No echo cancellation on this microphone. Headphones, sir, or I shall interrupt myself.");
+  mic = { ctx, rate: ctx.sampleRate, proc, vad: { on: false, frames: [], pre: [], lastLoud: 0, start: 0 } };
+  proc.onaudioprocess = e => onFrame(new Float32Array(e.inputBuffer.getChannelData(0)));
+  return mic;
+}
+
+function onFrame(f) {
+  if (ptt) { pttFrames.push(f); return; }
+  if (!handsFree) return;
+  const v = mic.vad, now = performance.now();
+  let sum = 0; for (let i = 0; i < f.length; i++) sum += f[i] * f[i];
+  const rms = Math.sqrt(sum / f.length);
+  const loud = rms > (speaking ? SPEAKING_THRESHOLD : THRESHOLD);
+  if (!v.on) {
+    v.pre.push(f); if (v.pre.length > 6) v.pre.shift();      // ~250 ms of pre-roll
+    if (loud) { v.on = true; v.frames = [...v.pre]; v.start = now; v.lastLoud = now; clearTimeout(finishTimer); }
+    return;
+  }
+  v.frames.push(f);
+  if (loud) v.lastLoud = now;
+  if (now - v.lastLoud > SILENCE_MS || now - v.start > 30000) {
+    v.on = false;
+    const dur = v.lastLoud - v.start;
+    const frames = v.frames; v.frames = []; v.pre = [];
+    if (dur >= MIN_UTTERANCE_MS) { pendingHears++; hearQueue = hearQueue.then(() => onUtterance(frames, v.lastLoud)); }
+    else if (buffer) armFinish();
+  }
+}
+
+function toWav(frames, rate) {
+  const total = frames.reduce((a, f) => a + f.length, 0);
+  const pcm = new Float32Array(total); let o = 0;
+  for (const f of frames) { pcm.set(f, o); o += f.length; }
+  const ratio = rate / 16000, n = Math.floor(total / ratio);
+  const buf = new ArrayBuffer(44 + n * 2), dv = new DataView(buf);
+  const str = (p, s) => [...s].forEach((c, i) => dv.setUint8(p + i, c.charCodeAt(0)));
+  str(0, "RIFF"); dv.setUint32(4, 36 + n * 2, true); str(8, "WAVE"); str(12, "fmt ");
+  dv.setUint32(16, 16, true); dv.setUint16(20, 1, true); dv.setUint16(22, 1, true);
+  dv.setUint32(24, 16000, true); dv.setUint32(28, 32000, true); dv.setUint16(32, 2, true); dv.setUint16(34, 16, true);
+  str(36, "data"); dv.setUint32(40, n * 2, true);
+  for (let i = 0; i < n; i++) {                  // average each window: a cheap low-pass before decimating
+    const a = Math.floor(i * ratio), b = Math.max(a + 1, Math.floor((i + 1) * ratio));
+    let s = 0; for (let j = a; j < b; j++) s += pcm[j];
+    const x = Math.max(-1, Math.min(1, s / (b - a)));
+    dv.setInt16(44 + i * 2, x < 0 ? x * 0x8000 : x * 0x7fff, true);
+  }
+  return new Blob([buf], { type: "audio/wav" });
+}
+
+async function hear(wav, model) {
+  const r = await fetch("/hear?model=" + model, { method: "POST", headers: { "Content-Type": "audio/wav" }, body: wav });
+  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "hearing offline");
+  return r.json();
+}
+
+const WAKE = /^\W*(hey|hi|ok|okay)?[\s,]*(jarvis|jarvas|jervis)\b[\s,.!?:;-]*/i;
+async function onUtterance(frames, endedAt) {
+  const wav = toWav(frames, mic.rate);
+  try {
+    if (speaking) {                              // while he talks, only "stop" and "wait" count
+      const { text } = await hear(wav, "wake");
+      if (/\b(stop|wait)\b/i.test(text)) { stopSpeaking(); setStatus("listening", "stopped"); }
+      else if (++echoHits >= 2) notice("I can hear myself through your speakers, sir. Headphones would help.");
+      return;
+    }
+    if (awaitingCommand || buffer) {             // the command itself, or more of it
+      const { text } = await hear(wav, "main");
+      awaitingCommand = false;
+      addToBuffer(text.replace(WAKE, ""), endedAt);
+      return;
+    }
+    const wake = await hear(wav, "wake");        // the SMALL model only listens for the name
+    if (!WAKE.test(wake.text)) return;           // no name: discarded, never logged, never sent on
+    const main = await hear(wav, "main");        // the LARGE model hears the command
+    const rest = main.text.replace(WAKE, "").trim() || (WAKE.test(main.text) ? "" : wake.text.replace(WAKE, "").trim());
+    if (!rest || /^\W*$/.test(rest)) {
+      awaitingCommand = true;
+      setStatus("listening", "Yes, sir?");
+      await speak("Yes, sir?");
+      return;
+    }
+    addToBuffer(rest, endedAt);
+  } catch (e) {
+    setStatus("listening", "ears offline: " + e.message);
+  } finally {
+    pendingHears--;
+  }
+}
+function addToBuffer(text, endedAt) {
+  text = text.trim();
+  if (!text) { if (buffer) armFinish(); return; }
+  buffer = (buffer ? buffer + " " : "") + text;
+  setStatus("heard", `(${((performance.now() - endedAt) / 1000).toFixed(1)}s) “${buffer}”`);
+  armFinish();
+}
+function armFinish() {
+  clearTimeout(finishTimer);
+  finishTimer = setTimeout(() => {
+    if (mic.vad.on || pendingHears > 0) return armFinish();   // more speech is on its way: keep waiting
+    const t = buffer; buffer = "";
+    if (t) { JARVIS.lastCommand = t; handle(t, "voice"); }
+  }, FINISH_MS);
+}
+
+$("wake").onclick = async () => {
+  try { await startMic(); } catch (e) { notice("No microphone, sir: " + e.message); return; }
+  handsFree = !handsFree;
+  $("wake").classList.toggle("on", handsFree);
+  if (mic.ctx.state === "suspended") mic.ctx.resume();
+  setStatus(handsFree ? "listening" : "idle", handsFree ? "say “Jarvis”" : "");
+};
+// push-to-talk: bypasses the wake word and goes straight to the large model
+$("ptt").onclick = async () => {
+  try { await startMic(); } catch (e) { notice("No microphone, sir: " + e.message); return; }
+  if (mic.ctx.state === "suspended") mic.ctx.resume();
+  if (!ptt) { stopSpeaking(); pttFrames = []; ptt = true; $("ptt").classList.add("rec"); $("ptt").textContent = "SEND"; setStatus("listening", "talk, then click SEND"); return; }
+  ptt = false; $("ptt").classList.remove("rec"); $("ptt").textContent = "TALK";
+  const endedAt = performance.now();
+  try {
+    const { text } = await hear(toWav(pttFrames, mic.rate), "main");
+    setStatus("heard", `(${((performance.now() - endedAt) / 1000).toFixed(1)}s) “${text}”`);
+    if (text.trim()) handle(text, "voice"); else setStatus("idle", "heard nothing");
+  } catch (e) { setStatus("idle", "ears offline: " + e.message); }
+};
+
+// =============================== boot ========================================
+updateCount();
+if (MUTED) $("muted").style.display = "inline";
+fetch("/status").then(r => r.json()).then(s => {
+  if (!s.voice.available) voiceState.mode = "browser";
+  voiceState.profile = s.voice.profile || "Jarvis";
+  updateBadge(s.brain);                          // first state: badge stays hidden
+  JARVIS.status = s;
+}).catch(() => {});
+const GREETING = "Hello, sir.";
+showAnswer({ answer: GREETING });
+setTimeout(() => speak(GREETING), 600);
+// autoplay blocked until the first click? then the greeting waits for it
+addEventListener("pointerdown", () => { if (JARVIS.metrics.blocked) { delete JARVIS.metrics.blocked; speak(GREETING); } }, { once: true });
+</script>
+</body>
+</html>

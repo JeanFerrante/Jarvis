@@ -1,0 +1,6 @@
+Vendored libraries. The viewer loads these from disk and never touches a CDN.
+
+3d-force-graph 1.80.1 (UMD bundle; includes three.js >=0.179, three-forcegraph, three-render-objects)
+  source: https://cdn.jsdelivr.net/npm/3d-force-graph@1.80.1/dist/3d-force-graph.min.js
+  sha256: 13088340aad408156064fd120c3bc3a47c93a3cc45b8f132d6284b20e2223be9
+  licence: MIT
