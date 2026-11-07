@@ -573,7 +573,7 @@ def main():
     s = brain_status()
     say(f"brain: {s['name']} {s['model']} on {s['where']}")
     boot_engines()
-    host = CONFIG.get("server", {}).get("host", "127.0.0.1")
+    host = os.environ.get("JARVIS_HOST") or CONFIG.get("server", {}).get("host", "127.0.0.1")
     port = int(os.environ.get("JARVIS_PORT") or CONFIG.get("server", {}).get("port", 4700))
     httpd = ThreadingHTTPServer((host, port), Handler)
     httpd.daemon_threads = True
