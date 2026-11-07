@@ -14,7 +14,12 @@ $ProgressPreference = "SilentlyContinue"          # Invoke-WebRequest fica muito
 Set-Location -Path $PSScriptRoot
 $env:PYTHONIOENCODING = "utf-8"
 
-function Step($t) { Write-Host ""; Write-Host "==> $t" -ForegroundColor Cyan }
+$script:stepN = 0
+function Step($t) {
+    $script:stepN++
+    Write-Host ""
+    Write-Host ("==> [{0}] {1}   ({2:HH:mm:ss})" -f $script:stepN, $t, (Get-Date)) -ForegroundColor Cyan
+}
 function Warn($t) { Write-Host "AVISO: $t" -ForegroundColor Yellow }
 function Refresh-Path {
     $env:Path = [Environment]::GetEnvironmentVariable("Path", "Machine") + ";" +
@@ -56,6 +61,12 @@ function Find-Ollama {
     return $false
 }
 
+New-Item -ItemType Directory -Force -Path "cache" | Out-Null
+try { Start-Transcript -Path "cache\instalacao.log" -Append | Out-Null } catch {}
+Write-Host "Nao clique DENTRO desta janela: o Windows pausa ela. Se pausar, aperte Enter." -ForegroundColor Yellow
+Write-Host "Se o Windows pedir permissao para instalar algo, a janela pode estar atras desta." -ForegroundColor Yellow
+Write-Host "Registro desta instalacao: cache\instalacao.log" -ForegroundColor DarkGray
+
 try {
     # ----------------------------------------------------------------- Python
     Step "Python"
@@ -86,7 +97,7 @@ try {
     $have = (Invoke-RestMethod -Uri "http://localhost:11434/api/tags").models | ForEach-Object { $_.name }
     if ($have -notcontains $tag) {
         if ($SoLigar) { throw "O cerebro $tag nao foi baixado. Rode INSTALAR-JARVIS.bat primeiro." }
-        Write-Host "baixando o cerebro $tag (so na primeira vez; uns 2 GB)..."
+        Write-Host "baixando o cerebro $tag (so na primeira vez; uns 2 GB, a barra mostra o progresso)..."
         ollama pull $tag
         if ($LASTEXITCODE -ne 0) { throw "ollama pull $tag falhou" }
     } else { Write-Host "cerebro $tag pronto" }
@@ -94,13 +105,14 @@ try {
     if (-not $SoLigar) {
         # ------------------------------------------------------------- ouvidos e voz
         Step "Ouvidos (Whisper)"
-        Invoke-Python -m pip install --quiet --disable-pip-version-check faster-whisper numpy
-        Write-Host "baixando e aquecendo os modelos do Whisper (so na primeira vez)..."
+        Write-Host "instalando o Whisper (alguns minutos na primeira vez)..."
+        Invoke-Python -m pip install --disable-pip-version-check faster-whisper numpy
+        Write-Host "baixando os modelos do Whisper (uns 700 MB na primeira vez)..."
         Invoke-Python hear.py
 
         Step "Voz (Piper)"
         try {
-            Invoke-Python -m pip install --quiet --disable-pip-version-check piper-tts
+            Invoke-Python -m pip install --disable-pip-version-check piper-tts
             New-Item -ItemType Directory -Force -Path "models\piper" | Out-Null
             $hf = "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_GB/alan/medium"
             foreach ($f in @("en_GB-alan-medium.onnx", "en_GB-alan-medium.onnx.json")) {
@@ -121,15 +133,19 @@ try {
     if (-not (Jarvis-Up)) {
         $serverArgs = @($script:PYARGS) + @("server.py")
         Start-Process -FilePath $script:PY -ArgumentList $serverArgs -WorkingDirectory $PSScriptRoot -WindowStyle Minimized
-        Write-Host "carregando cerebro, voz e ouvidos..."
-        for ($i = 0; $i -lt 180 -and -not (Jarvis-Up); $i++) { Start-Sleep -Seconds 1 }
+        Write-Host "carregando cerebro, voz e ouvidos (pode levar 1 a 3 minutos)..." -NoNewline
+        for ($i = 0; $i -lt 300 -and -not (Jarvis-Up); $i++) {
+            Start-Sleep -Seconds 1
+            if ($i % 5 -eq 4) { Write-Host "." -NoNewline }
+        }
+        Write-Host ""
         if (-not (Jarvis-Up)) { throw "O Jarvis nao ligou. Abra a janela minimizada do Python para ver o erro." }
     }
     Write-Host "Jarvis no ar: http://127.0.0.1:4700/" -ForegroundColor Green
     Start-Process "http://127.0.0.1:4700/"
 
     if (-not $SoLigar) {
-        Step "Conferindo tudo (preflight)"
+        Step "Conferindo tudo (preflight; a pergunta de teste ao cerebro pode levar 1 minuto)"
         & $script:PY @script:PYARGS preflight.py
         Write-Host ""
         Write-Host "Pronto. Para ligar de novo depois, de dois cliques em LIGAR-JARVIS.bat." -ForegroundColor Green
@@ -138,5 +154,8 @@ try {
     Write-Host ""
     Write-Host "ERRO: $_" -ForegroundColor Red
     Write-Host $_.InvocationInfo.PositionMessage -ForegroundColor DarkGray
+    Write-Host "Mande este erro (ou o arquivo cache\instalacao.log) para o Claude." -ForegroundColor Yellow
+    try { Stop-Transcript | Out-Null } catch {}
     exit 1
 }
+try { Stop-Transcript | Out-Null } catch {}

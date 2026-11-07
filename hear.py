@@ -65,9 +65,18 @@ class Hearing:
                 from faster_whisper import WhisperModel  # soft import
                 self.package = "faster_whisper"
                 kw = {"device": "auto", "compute_type": self.cfg.get("compute_type", "int8")}
-                self.models = {"main": WhisperModel(FW_SIZES.get(self.main_name, self.main_name), **kw)}
-                self.models["wake"] = (self.models["main"] if self.wake_name == self.main_name else
-                                       WhisperModel(FW_SIZES.get(self.wake_name, self.wake_name), **kw))
+
+                def load(name):
+                    try:
+                        return WhisperModel(FW_SIZES.get(name, name), **kw)
+                    except Exception:  # noqa: BLE001 - a half-installed GPU stack: use the CPU
+                        if kw["device"] == "cpu":
+                            raise
+                        kw["device"] = "cpu"
+                        return WhisperModel(FW_SIZES.get(name, name), **kw)
+                self.models = {"main": load(self.main_name)}
+                self.models["wake"] = (self.models["main"] if self.wake_name == self.main_name
+                                       else load(self.wake_name))
             import numpy as np
             silence = np.zeros(16000, dtype=np.float32)
             for which in ("wake", "main"):
@@ -114,4 +123,18 @@ if __name__ == "__main__":
     os.environ.pop("HF_HUB_OFFLINE", None)
     root = os.path.dirname(os.path.abspath(__file__))
     with open(os.path.join(root, "config.json"), encoding="utf-8") as f:
-        print(Hearing(json.load(f).get("hearing", {})).boot())
+        cfg = json.load(f).get("hearing", {})
+    names = [cfg.get("model", "large-v3-turbo"), cfg.get("wake_model", "small")]
+    try:  # faster-whisper downloads silently; fetch first with a progress bar so it never looks stuck
+        from faster_whisper.utils import _MODELS
+        from huggingface_hub import snapshot_download
+        for name in dict.fromkeys(names):
+            repo = _MODELS.get(FW_SIZES.get(name, name))
+            if repo:
+                print(f"downloading Whisper '{name}' ({repo}) ...", flush=True)
+                snapshot_download(repo, allow_patterns=["config.json", "preprocessor_config.json",
+                                                        "model.bin", "tokenizer.json", "vocabulary.*"])
+    except ImportError:
+        pass  # mlx_whisper (Mac) downloads in boot() below
+    print("loading and warming the ears ...", flush=True)
+    print(Hearing(cfg).boot())
