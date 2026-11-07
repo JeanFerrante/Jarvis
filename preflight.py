@@ -300,4 +300,9 @@ def finish():
 
 
 if __name__ == "__main__":
+    for _stream in (sys.stdout, sys.stderr):        # a Windows console may not speak UTF-8
+        try:
+            _stream.reconfigure(errors="replace")
+        except (AttributeError, ValueError):
+            pass
     sys.exit(main())

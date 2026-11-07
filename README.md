@@ -47,6 +47,17 @@ Measured here (4 CPU cores, no GPU): **hear 1.7 s, think 16.8 s, speak 0.2 s to 
 Thinking is slow because a 3B model reads about 1,100 prompt tokens on a CPU. On an
 Apple Silicon Mac with Ollama it is a few seconds.
 
+### On Windows (one double-click)
+
+1. Download this repository (green **Code** button → **Download ZIP**) and unzip it, for
+   example into `Documents\Jarvis`.
+2. Double-click **`INSTALAR-JARVIS.bat`**. It installs Python and Ollama with `winget` if
+   they are missing, pulls the brain, installs Whisper and the Piper voice, starts Jarvis,
+   opens it in your browser and runs the preflight. Run it again any time; it only fetches
+   what is missing.
+3. Afterwards, **`LIGAR-JARVIS.bat`** starts it again without touching the internet.
+   To turn Jarvis off, close its minimised Python window.
+
 ### On your Mac (the prompt-pack setup)
 
 1. `ollama pull qwen3.5:9b` (or the brain for your memory size, see the packs).

@@ -174,6 +174,11 @@ def run(quiet=False, browser=True, cloud=False):
 
 
 if __name__ == "__main__":
+    for _stream in (sys.stdout, sys.stderr):        # a Windows console may not speak UTF-8
+        try:
+            _stream.reconfigure(errors="replace")
+        except (AttributeError, ValueError):
+            pass
     args = sys.argv[1:]
     ok, _, _ = run(browser="--no-browser" not in args, cloud="--cloud" in args)
     sys.exit(0 if ok else 1)

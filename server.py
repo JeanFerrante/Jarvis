@@ -53,6 +53,11 @@ import net  # noqa: E402
 net.install_socket_watch()
 import build  # noqa: E402
 
+# explicit types: on Windows the registry can map .js to text/plain
+for _ext, _type in ((".js", "text/javascript"), (".html", "text/html"), (".css", "text/css"),
+                    (".json", "application/json"), (".wav", "audio/wav"), (".txt", "text/plain")):
+    mimetypes.add_type(_type, _ext)
+
 ROOT = build.ROOT
 VIEWER = build.VIEWER
 CONFIG_PATH = os.path.join(ROOT, "config.json")
@@ -374,7 +379,8 @@ def chat(message):
     about_notes = top >= 3 and not (SMALL_TALK.match(message) and top < 6)
     used = [i for _, i in hits]                 # the top 6 always go to the model
     focus = [i for s, i in hits if s >= 0.5 * top] if about_notes else []
-    today = datetime.date.today().strftime("%A %-d %B %Y")
+    d = datetime.date.today()
+    today = f"{d:%A} {d.day} {d:%B %Y}"            # no %-d: Windows does not know it
     notes = "\n\n".join(f"## {INDEX.nodes[i]['label']} ({INDEX.nodes[i]['group']})\n"
                         f"{INDEX.nodes[i]['excerpt']}" for i in used) or "(no note matches this)"
     turn = {"role": "user", "content": f"Today is {today}.\n\nNotes:\n{notes}\n\nQuestion: {message}"}
