@@ -27,7 +27,7 @@ if ! brain_up; then
     nohup python3 -m llama_cpp.server --model "$GGUF" --model_alias "$TAG" \
       --host 127.0.0.1 --port 11434 --n_ctx 8192 > models/llama_server.log 2>&1 &
   fi
-  for _ in $(seq 1 90); do brain_up && break; sleep 1; done
+  for _ in $(seq 1 300); do brain_up && break; sleep 1; done
   brain_up || { echo "the brain did not come up on :11434"; exit 1; }
 fi
 echo "brain up: $(curl -s http://localhost:11434/v1/models | python3 -c 'import sys,json; print(", ".join(m["id"] for m in json.load(sys.stdin)["data"]))')"
