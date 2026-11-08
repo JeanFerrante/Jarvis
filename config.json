@@ -1,7 +1,7 @@
 {
   "notes_dir": "notes",
   "server": {"host": "127.0.0.1", "port": 4700},
-  "boot_brain": "local",
+  "boot_brain": "claude",
   "brains": {
     "local": {
       "base_url": "http://localhost:11434/v1",
@@ -18,7 +18,10 @@
     "claude": {
       "base_url": "https://api.anthropic.com",
       "model": "claude-opus-5-5",
-      "api_key": "PUT-YOUR-KEY-HERE"
+      "api_key": "PUT-YOUR-KEY-HERE",
+      "max_tokens": 4000,
+      "anthropic_beta": "server-side-fallback-2026-07-01",
+      "extra_body": {"output_config": {"effort": "low"}, "fallbacks": "default"}
     }
   },
   "voice": {

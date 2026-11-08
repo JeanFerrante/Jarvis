@@ -5,14 +5,14 @@
 # local brain every word here is paid for in time on every turn.
 # Anything that changes (the date, the retrieved notes, the question) goes LAST.
 # =============================================================================
-PERSONA = """You are Jarvis, a dry, impeccably polite British butler with a razor wit. You live entirely on this machine.
+PERSONA = """You are Jarvis, a dry, impeccably polite British butler with a razor wit.
 
 Rules:
 1. Address the user as "sir" occasionally, not in every sentence.
 2. Answer in ONE witty sentence plus the facts. Never recite the note back; it is already on his screen.
 3. Use only the notes you are given. When they do not cover something, say so plainly and with a little dignity. Never invent a source.
 4. Never claim an action happened unless the system hands you a receipt. Saying "done" when nothing happened is the one unforgivable sin.
-5. You cost nothing to run: you live on this machine. If a request needs the internet (live web research, news, anything beyond the notes) and no cloud brain is plugged in, say so in one line instead of pretending.
+5. Where you run and what you cost: read the "Running on" line. On this machine you cost nothing; in the cloud each answer costs a few cents. If a request needs the internet (live web research, news, anything beyond the notes), say in one line that you cannot do that instead of pretending.
 
 Actions. Only when sir asks you to show a note, change brain or clear the conversation, reply with just the tag:
 show or open a note -> [OPEN its title]
@@ -83,6 +83,14 @@ def brain(name=None):
     return CONFIG["brains"][name or STATE["brain"]]
 
 
+def api_key(b):
+    """The key in config.json, or ANTHROPIC_API_KEY for an Anthropic brain whose key is a placeholder."""
+    key = b.get("api_key", "")
+    if is_anthropic(b) and is_placeholder(key):
+        return os.environ.get("ANTHROPIC_API_KEY", "")
+    return key
+
+
 def is_placeholder(value):
     return not value or any(p in str(value) for p in PLACEHOLDERS)
 
@@ -108,8 +116,9 @@ def brain_problem(name):
     b = CONFIG["brains"].get(name)
     if b is None:
         return f"There is no {name} brain on the shelf, sir."
-    if is_anthropic(b) and is_placeholder(b.get("api_key")):
-        return "The cloud brain has no key, sir, so I shall stay exactly where I am: local."
+    if is_anthropic(b) and is_placeholder(api_key(b)):
+        return ("The cloud brain has no key, sir, so I shall stay exactly where I am: local. "
+                "Put it in config.json or in ANTHROPIC_API_KEY.")
     if is_placeholder(b.get("model")):
         return (f"The {name} shelf is empty, sir; put an Ollama tag in config.json "
                 "and I shall move in.")
@@ -121,16 +130,21 @@ def call_brain(b, system, messages, max_tokens):
     extra = b.get("extra_body") or {}
     if is_anthropic(b):                                       # Anthropic Messages API
         url = b["base_url"].rstrip("/") + "/v1/messages"
-        body = {"model": b["model"], "max_tokens": max_tokens, "system": system,
-                "messages": messages, **extra}
-        headers = {"x-api-key": b["api_key"], "anthropic-version": "2023-06-01"}
+        # Opus 5.5 always thinks, and thinking spends max_tokens: give it room (config "max_tokens")
+        body = {"model": b["model"], "max_tokens": max(max_tokens, int(b.get("max_tokens", 0))),
+                "system": system, "messages": messages, **extra}
+        headers = {"x-api-key": api_key(b), "anthropic-version": "2023-06-01"}
+        if b.get("anthropic_beta"):
+            headers["anthropic-beta"] = b["anthropic_beta"]
         data = net.request_json(url, "brain: anthropic messages", body, headers, timeout=180)
+        if data.get("stop_reason") == "refusal":
+            return "I am afraid I must decline that one, sir.", data.get("usage", {})
         text = "".join(c.get("text", "") for c in data.get("content", []) if c.get("type") == "text")
         return text, data.get("usage", {})
     url = b["base_url"].rstrip("/") + "/chat/completions"    # OpenAI-style (Ollama, any cloud)
     body = {"model": b["model"], "max_tokens": max_tokens,
             "messages": [{"role": "system", "content": system}] + messages, **extra}
-    headers = {"Authorization": "Bearer " + b.get("api_key", "ollama")}
+    headers = {"Authorization": "Bearer " + (api_key(b) or "ollama")}
     data = net.request_json(url, "brain: chat completions", body, headers, timeout=300)
     choice = (data.get("choices") or [{}])[0]
     return (choice.get("message") or {}).get("content") or "", data.get("usage", {})
@@ -383,10 +397,30 @@ def chat(message):
     today = f"{d:%A} {d.day} {d:%B %Y}"            # no %-d: Windows does not know it
     notes = "\n\n".join(f"## {INDEX.nodes[i]['label']} ({INDEX.nodes[i]['group']})\n"
                         f"{INDEX.nodes[i]['excerpt']}" for i in used) or "(no note matches this)"
-    turn = {"role": "user", "content": f"Today is {today}.\n\nNotes:\n{notes}\n\nQuestion: {message}"}
+    s_ = brain_status()
+    running = ("this machine (local, free)" if s_["local"]
+               else f"{s_['where']} (cloud model {s_['model']}, a few cents per answer)")
+    turn = {"role": "user", "content": f"Today is {today}. Running on: {running}.\n\n"
+                                       f"Notes:\n{notes}\n\nQuestion: {message}"}
     with LOCK:
         history = list(HISTORY)
-    text, usage = ask_brain(history + [turn])
+    try:
+        text, usage = ask_brain(history + [turn])
+    except net.HTTPError as e:
+        why = {401: "rejected its key", 403: "refused me", 429: "asked me to slow down",
+               529: "is overloaded"}.get(e.code, f"answered {e.code}")
+        say(f"brain {STATE['brain']} failed: HTTP {e.code} {e.read()[:200]!r}")
+        return {"answer": f"The {STATE['brain']} brain {why}, sir. Say \"go local\" and I shall carry on here.",
+                "nodes": used, "focus": [], "about_notes": False, "brain": brain_status(),
+                "seconds": round(time.time() - t0, 2)}
+    except net.URLError as e:
+        say(f"brain {STATE['brain']} unreachable: {e}")
+        where_ = brain_status()["where"]
+        return {"answer": f"I cannot reach my brain at {where_}, sir. "
+                          + ("Is the Wi-Fi off? Say \"go local\"." if where_ != "this machine"
+                             else "Is Ollama running?"),
+                "nodes": used, "focus": [], "about_notes": False, "brain": brain_status(),
+                "seconds": round(time.time() - t0, 2)}
     text, receipts, tag_focus, extra = run_tags(text, about_notes)
     text = build.WIKILINK.sub(lambda m: m.group(1).strip(), text)
     if tag_focus:
@@ -574,6 +608,10 @@ BROWSER_LOG = {}
 
 def main():
     global INDEX
+    problem = brain_problem(STATE["brain"]) if STATE["brain"] != "local" else None
+    if problem:
+        say(f"boot brain {STATE['brain']!r} cannot run ({problem}) - booting on local instead")
+        STATE["brain"] = "local"
     INDEX = Index()
     say(f"indexed {len(INDEX.nodes)} notes, {len(INDEX.links)} links")
     s = brain_status()

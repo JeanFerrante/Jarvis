@@ -91,11 +91,7 @@ def graph_loads():
 
 
 def ollama_has_brain():
-    _, st = jget("/status")
-    name = st["brain"]["name"]
-    b = CONFIG["brains"][name]
-    if "api.anthropic.com" in b["base_url"]:
-        return f"boot brain is {name} (cloud); skipped"
+    b = CONFIG["brains"]["local"]           # always checked: it is the fallback and "go local"
     _, models = jget("/models", base=b["base_url"].rstrip("/"), timeout=5)
     ids = [m.get("id") for m in models.get("data", [])]
     if b["model"] not in ids:
@@ -261,6 +257,10 @@ def no_cdn():
 
 
 def drill_passes():
+    _, st = jget("/status")
+    if not st["brain"]["local"]:
+        raise AssertionError(f"the {st['brain']['name']} brain is live, so answers leave this machine "
+                             f"({st['brain']['where']}); say \"go local\" and run drill.py to prove local mode")
     import drill
     ok, hosts, _ = drill.run(quiet=True, browser=False)
     assert ok, f"outbound hosts during a turn: {hosts}"
@@ -284,7 +284,7 @@ def main():
     check("a ?mute=1 tab is really silent", mute_is_silent)
     check("no cloud key anywhere under viewer/", no_cloud_key)
     check("no CDN reference anywhere under viewer/", no_cdn)
-    check("the Wi-Fi-off drill passes in local mode", drill_passes)
+    check("the Wi-Fi-off drill passes in local mode", drill_passes, warn_only=True)
     return finish()
 
 

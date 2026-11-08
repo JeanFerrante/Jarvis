@@ -9,7 +9,8 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-TAG=$(python3 -c 'import json; c=json.load(open("config.json")); print(c["brains"][c.get("boot_brain","local")]["model"])')
+# the local brain is always served: it is the fallback and the target of "go local"
+TAG=$(python3 -c 'import json; print(json.load(open("config.json"))["brains"]["local"]["model"])')
 brain_up() { curl -s -m 2 http://localhost:11434/v1/models 2>/dev/null | grep -q '"data"'; }
 
 if ! brain_up; then

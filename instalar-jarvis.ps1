@@ -93,7 +93,7 @@ try {
         for ($i = 0; $i -lt 60 -and -not (Brain-Up); $i++) { Start-Sleep -Seconds 1 }
         if (-not (Brain-Up)) { throw "O Ollama nao respondeu na porta 11434. Abra o app Ollama e rode de novo." }
     }
-    $tag = (& $script:PY @script:PYARGS -c "import json; c=json.load(open('config.json', encoding='utf-8')); print(c['brains'][c.get('boot_brain','local')]['model'])").Trim()
+    $tag = (& $script:PY @script:PYARGS -c "import json; print(json.load(open('config.json', encoding='utf-8'))['brains']['local']['model'])").Trim()
     $have = (Invoke-RestMethod -Uri "http://localhost:11434/api/tags").models | ForEach-Object { $_.name }
     if ($have -notcontains $tag) {
         if ($SoLigar) { throw "O cerebro $tag nao foi baixado. Rode INSTALAR-JARVIS.bat primeiro." }
