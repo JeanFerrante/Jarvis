@@ -97,19 +97,17 @@ On Windows with an NVIDIA card, use VoiceStudio's `voxcpm2` engine and `faster-w
 ## The brain shelf
 
 `config.json` → `brains` holds `local`, `big` and `claude`, and `boot_brain` is
-**`claude` (Claude Opus 5.5)**. Give it an Anthropic API key in either place, yourself,
-never in a chat:
+**`local`**: free, offline, no account. The `claude` entry (Claude Opus 5.5) is optional
+and **paid per use** through the Anthropic API. To use it, give it a key yourself, never
+in a chat: `brains.claude.api_key` in `config.json`, or the `ANTHROPIC_API_KEY`
+environment variable. Then say "switch to Claude", or set `boot_brain` to `"claude"`.
+Without a key, Jarvis declines in one dry line and stays local.
 
-- `config.json` → `brains.claude.api_key`, or
-- the `ANTHROPIC_API_KEY` environment variable (Windows: run
-  `setx ANTHROPIC_API_KEY "your-key"` once, then open a new window).
-
-Without a key Jarvis logs why and boots on the local brain instead. The `claude` entry
-runs Opus 5.5 at `effort: low` (it always thinks, so `max_tokens` is 4000) with server-side
-refusal fallbacks on. An answer costs roughly one US cent. With Opus live, your question
-and the matching note excerpts go to `api.anthropic.com`; say **"go local"** to keep
-everything on the machine, and `drill.py` only passes in local mode. Say "switch to
-Claude" to go back. Swaps last until a restart, which boots back to `boot_brain`.
+The `claude` entry runs Opus 5.5 at `effort: low` (it always thinks, so `max_tokens` is
+4000) with server-side refusal fallbacks on; an answer costs roughly one US cent. With
+Opus live, your question and the matching note excerpts go to `api.anthropic.com`; say
+**"go local"** to come back, and `drill.py` only passes in local mode. Swaps last until a
+restart, which boots back to `boot_brain`.
 
 `big` ships with a placeholder Ollama tag; Jarvis declines that swap in one dry line until
 you fill it in.

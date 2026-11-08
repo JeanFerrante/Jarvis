@@ -1,7 +1,7 @@
 {
   "notes_dir": "notes",
   "server": {"host": "127.0.0.1", "port": 4700},
-  "boot_brain": "claude",
+  "boot_brain": "local",
   "brains": {
     "local": {
       "base_url": "http://localhost:11434/v1",
